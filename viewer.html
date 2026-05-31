@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reader · My Library</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --accent: #e94560;
+      --text: #eaeaea;
+      --muted: #888;
+      --toolbar-h: 54px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Toolbar ─────────────────────────────────────────── */
+    #toolbar {
+      height: var(--toolbar-h);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.4);
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    #backBtn {
+      background: transparent;
+      border: 1px solid #333;
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 15px;
+      text-decoration: none;
+      flex-shrink: 0;
+      transition: color .15s, border-color .15s;
+    }
+    #backBtn:hover { color: var(--text); border-color: #555; }
+    #bookTitle {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+      min-width: 0;
+    }
+    .tb-btn {
+      background: var(--bg);
+      border: 1px solid #333;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 11px;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+    .tb-btn:hover  { background: var(--accent); border-color: var(--accent); }
+    .tb-btn:disabled { opacity: .35; cursor: default; }
+    .tb-btn:disabled:hover { background: var(--bg); border-color: #333; }
+    #pageInput {
+      width: 50px;
+      padding: 5px 6px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    #pageInput:focus { outline: none; border-color: var(--accent); }
+    #pageTotal { font-size: 13px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+    #shareBtn {
+      background: transparent;
+      border: 1px solid #444;
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 6px 9px;
+      cursor: pointer;
+      font-size: 12px;
+      flex-shrink: 0;
+      transition: all .15s;
+    }
+    #shareBtn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Canvas ───────────────────────────────────────────── */
+    #viewerContainer {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: auto;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 16px;
+    }
+    #pdfCanvas {
+      display: block;
+      box-shadow: 0 4px 24px rgba(0,0,0,.6);
+      border-radius: 4px;
+      max-width: 100%;
+    }
+
+    /* ── Overlay ──────────────────────────────────────────── */
+    #status {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      gap: 16px;
+      z-index: 20;
+    }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 4px solid #333;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #statusText { color: var(--muted); font-size: 14px; }
+
+    /* ── Toast ────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #222;
+      color: var(--text);
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 13px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.5);
+      transition: transform .3s ease;
+      z-index: 100;
+      white-space: nowrap;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 500px) {
+      #bookTitle { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="status">
+  <div class="spinner"></div>
+  <p id="statusText">Loading…</p>
+</div>
+
+<div id="toolbar">
+  <a id="backBtn" href="index.html" title="Back to library">← Library</a>
+  <span id="bookTitle">—</span>
+  <button class="tb-btn" id="btnZoomOut" title="Zoom out">−</button>
+  <button class="tb-btn" id="btnZoomIn"  title="Zoom in">+</button>
+  <button class="tb-btn" id="btnPrev" title="Previous page">‹</button>
+  <input  id="pageInput" type="number" min="1" />
+  <span   id="pageTotal">/ —</span>
+  <button class="tb-btn" id="btnNext" title="Next page">›</button>
+  <button id="shareBtn" title="Copy link to this page">🔗</button>
+</div>
+
+<div id="viewerContainer">
+  <canvas id="pdfCanvas"></canvas>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  // ── Parse ?book= from URL ─────────────────────────────────
+  const params  = new URLSearchParams(location.search);
+  const bookFile = params.get('book');  // e.g. "books/ddia.pdf"
+
+  // Derive a stable ID from the filename (e.g. "ddia")
+  const bookId  = bookFile
+    ? bookFile.split('/').pop().replace(/\.[^.]+$/, '')
+    : 'book';
+
+  const pageKey  = `lib_page_${bookId}`;
+  const totalKey = `lib_total_${bookId}`;
+
+  if (!bookFile) {
+    document.getElementById('statusText').textContent = 'No book specified. Add ?book=books/yourfile.pdf to the URL.';
+    document.querySelector('.spinner').style.display = 'none';
+  }
+
+  // ── State ─────────────────────────────────────────────────
+  let pdfDoc      = null;
+  let currentPage = 1;
+  let scale       = 1.4;
+  let rendering   = false;
+
+  // ── Elements ──────────────────────────────────────────────
+  const canvas    = document.getElementById('pdfCanvas');
+  const ctx       = canvas.getContext('2d');
+  const pageInput = document.getElementById('pageInput');
+  const pageTotal = document.getElementById('pageTotal');
+  const btnPrev   = document.getElementById('btnPrev');
+  const btnNext   = document.getElementById('btnNext');
+
+  // ── Page persistence ──────────────────────────────────────
+  function getSavedPage() {
+    const hash = location.hash.match(/#page=(\d+)/);
+    if (hash) return parseInt(hash[1], 10);
+    const stored = localStorage.getItem(pageKey);
+    return stored ? parseInt(stored, 10) : 1;
+  }
+
+  function savePage(n) {
+    localStorage.setItem(pageKey, n);
+    if (pdfDoc) localStorage.setItem(totalKey, pdfDoc.numPages);
+    history.replaceState(null, '', `?book=${encodeURIComponent(bookFile)}#page=${n}`);
+  }
+
+  // ── Render ────────────────────────────────────────────────
+  async function renderPage(n) {
+    if (!pdfDoc || rendering) return;
+    rendering = true;
+
+    const page     = await pdfDoc.getPage(n);
+    const viewport = page.getViewport({ scale });
+    canvas.width   = viewport.width;
+    canvas.height  = viewport.height;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    rendering   = false;
+    currentPage = n;
+    pageInput.value = n;
+    btnPrev.disabled = n <= 1;
+    btnNext.disabled = n >= pdfDoc.numPages;
+    document.getElementById('viewerContainer').scrollTop = 0;
+    savePage(n);
+  }
+
+  // ── Auto-fit width ────────────────────────────────────────
+  async function autoScale() {
+    const page = await pdfDoc.getPage(1);
+    const vw   = document.getElementById('viewerContainer').clientWidth - 32;
+    const vp   = page.getViewport({ scale: 1 });
+    scale = Math.min(Math.max(vw / vp.width, 0.6), 3.2);
+    renderPage(currentPage);
+  }
+
+  // ── Load ──────────────────────────────────────────────────
+  async function load() {
+    if (!bookFile) return;
+
+    // Set title from filename
+    document.getElementById('bookTitle').textContent =
+      decodeURIComponent(bookId.replace(/-/g, ' '));
+
+    try {
+      const task = pdfjsLib.getDocument(bookFile);
+      task.onProgress = ({ loaded, total }) => {
+        if (total) document.getElementById('statusText').textContent =
+          `Loading… ${Math.round((loaded/total)*100)}%`;
+      };
+      pdfDoc = await task.promise;
+
+      pageInput.max = pdfDoc.numPages;
+      pageTotal.textContent = `/ ${pdfDoc.numPages}`;
+
+      const start = Math.min(Math.max(getSavedPage(), 1), pdfDoc.numPages);
+      document.getElementById('status').style.display = 'none';
+      await renderPage(start);
+      autoScale();
+    } catch (e) {
+      document.getElementById('statusText').textContent = `Failed to load: ${e.message}`;
+      document.querySelector('.spinner').style.display = 'none';
+    }
+  }
+
+  // ── Controls ──────────────────────────────────────────────
+  btnPrev.addEventListener('click', () => { if (currentPage > 1) renderPage(currentPage - 1); });
+  btnNext.addEventListener('click', () => { if (pdfDoc && currentPage < pdfDoc.numPages) renderPage(currentPage + 1); });
+
+  pageInput.addEventListener('change', () => {
+    const n = parseInt(pageInput.value, 10);
+    if (pdfDoc && n >= 1 && n <= pdfDoc.numPages) renderPage(n);
+  });
+
+  document.getElementById('btnZoomIn').addEventListener('click',  () => { scale = Math.min(scale + 0.2, 4.0); renderPage(currentPage); });
+  document.getElementById('btnZoomOut').addEventListener('click', () => { scale = Math.max(scale - 0.2, 0.4); renderPage(currentPage); });
+
+  // ── Keyboard ──────────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (e.target === pageInput) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+      e.preventDefault();
+      if (pdfDoc && currentPage < pdfDoc.numPages) renderPage(currentPage + 1);
+    }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (currentPage > 1) renderPage(currentPage - 1);
+    }
+  });
+
+  // ── Swipe (mobile) ────────────────────────────────────────
+  let tx = 0;
+  document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - tx;
+    if (Math.abs(dx) > 50) {
+      if (dx < 0 && pdfDoc && currentPage < pdfDoc.numPages) renderPage(currentPage + 1);
+      if (dx > 0 && currentPage > 1)                         renderPage(currentPage - 1);
+    }
+  }, { passive: true });
+
+  // ── Share ─────────────────────────────────────────────────
+  document.getElementById('shareBtn').addEventListener('click', () => {
+    const url = `${location.origin}${location.pathname}?book=${encodeURIComponent(bookFile)}#page=${currentPage}`;
+    navigator.clipboard.writeText(url)
+      .then(() => toast('🔗 Link copied! Open on any device.'))
+      .catch(() => toast(`Copy: ${url}`));
+  });
+
+  function toast(msg, ms = 3000) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), ms);
+  }
+
+  load();
+</script>
+</body>
+</html>

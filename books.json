@@ -1,0 +1,10 @@
+[
+  {
+    "id": "ddia",
+    "title": "Designing Data-Intensive Applications",
+    "author": "Martin Kleppmann",
+    "file": "books/ddia.pdf",
+    "cover": "",
+    "tags": ["distributed systems", "databases", "engineering"]
+  }
+]
